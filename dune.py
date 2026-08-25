@@ -1,11 +1,9 @@
 import random
+import copy
 import leaders
 import conflicts
 import cards
-#vars
-numplayers = None
-players = []
-firstTurnMarker = 0
+import board
 #structs
 class Player:
     def __init__(self, leader, water):
@@ -16,9 +14,11 @@ class Player:
         self.vp = 0
         self.combatPower = 0
         self.persuasion = 0
+        self.hasRevealed = False
 
-        self.maxTroops = 16
+        self.maxTroops = 12 #16 for influence tracks though not relevant now
         self.deployedTroops = 0
+        self.garrisonedTroops = 3
         self.maxAgents = 2
         self.agents = 2
         self.isHighCouncil = False
@@ -35,12 +35,285 @@ class Player:
         self.repSpac = 0
         self.repEmpr = 0
 
+
+class Game: #to simulate one game
+    def __init__(self, numPlr):
+        self.players = []
+        self.numplayers = numPlr
+        self.firstTurnMarker = 0
+        self.conflictOrder = conflicts.init_conflicts()
+        self.intrigueOrder = cards.init_intrigues()
+        self.imperiumOrder = cards.init_imperium_deck()
+        self.arrakisLiaisons = cards.init_reserve_AL()
+        self.spiceMustFlow = cards.init_reserve_TSMF()
+        self.board = board.Board()
+        self.mentatAvailable = True
+        self.currentTurn = -1 #0 based
+
+        self.imperiumRow = []
+        for i in range(5):
+            goToRowCard = self.imperiumOrder.pop()
+            self.imperiumRow.append(goToRowCard)
+
+        self.highestScore = 0
+        #self.leadingPlr = -1
+
+        self.winner = None
+
+        self.stringMappings = {"Water":"water",
+                            "Spice":"spice",
+                            "Sol":"sols",
+                            "Troop":"garrisonedTroops",
+                            "Persuasion":"persuasion",
+                            "Sword":"combatPower",
+                            "InflF":"repFrem",
+                            "InflB":"repBene",
+                            "InflS":"repSpac",
+                            "InflE":"repEmpr",
+                            "VP":"vp"
+                            }
+
+        self.functionMappings = {"Draw": drawCard,
+                                "Intrigue": self.drawIntrigue
+                                 }
+
+    def resolveEffects(self, player, effectsList, multiplier = 1):
+        for effectString in effectsList:
+            numValue = int(effectString[0])
+            effect = effectString[1:]
+            mappedEffect = self.stringMappings.get(effect)
+            functionEffect = self.functionMappings.get(effect)
+            if mappedEffect:
+                playerItemAmt = getattr(player, mappedEffect)
+                setattr(player, mappedEffect, playerItemAmt+(numValue*multiplier))
+
+            elif functionEffect:
+                functionEffect(player, numValue)
+
+    def checkBoardspaceCost(self, player, space):
+        isOK = True
+        spaceCost = space.cost
+        if spaceCost != None:
+            for effectString in spaceCost:
+                numValue = int(effectString[0])
+                effect = effectString[1:]
+                mappedEffect = self.stringMappings.get(effect)
+                playerItemAmt = getattr(player, mappedEffect)
+                if playerItemAmt - numValue < 0:
+                    isOK = False
+                    break #formerly raise warning
+                else:
+                    pass
+        specialReq = space.specialReq
+        if specialReq:
+            for effectString in specialReq:
+                numValue = int(effectString[0])
+                effect = effectString[1:]
+                mappedEffect = self.stringMappings[effect] #only for ST so whatever
+                playerItemAmt = getattr(player, mappedEffect)
+                if playerItemAmt - numValue < 0:
+                    isOK = False
+                    break#raise UserWarning("Special req fail")
+                else:
+                    pass
+        return isOK
+
+    def promptPlayer(self, player, choice): #Play card effect? Trash? Resolve board or card first?
+        def promptBoardCardOrder(player):
+            pass
+        def promptChooseImperium(player):
+            print("which imperium card do you want - 0-4 IMP row 6 for AL 7 for TSMF and 9 nope")
+            for index in range(len(self.imperiumRow)): #will now not break
+                print(str(index) + ":" + self.imperiumRow[index].title + " - " + str(self.imperiumRow[index].persuasionCost))
+            if self.arrakisLiaisons:
+                print(self.arrakisLiaisons[0].title + " - " + str(self.arrakisLiaisons[0].persuasionCost))
+            if self.spiceMustFlow:
+                print(self.spiceMustFlow[0].title + " - " + str(self.spiceMustFlow[0].persuasionCost))
+            print("you have " + str(player.persuasion) + " persuasion")
+            userInput = int(input())
+
+            if userInput == 9:
+                return False
+            else:
+                try:
+                    mappings = {6: self.arrakisLiaisons[0],
+                        7: self.spiceMustFlow[0]
+                        }
+                    if mappings.get(userInput):
+                        self.buyImperiumCard(player, mappings[userInput])
+                    else:
+                        self.buyImperiumCard(player, self.imperiumRow[userInput])
+                except:
+                    print("not a valid choice")
+        if choice == "shop":
+            keepShopping = True
+            while player.persuasion > 0 and keepShopping:
+                shop = promptChooseImperium(player)
+                if shop == False: 
+                    keepShopping = False
+                
+
+
+
+    def playCard(self, player, card, boardSpace):
+        if not card in player.hand:
+            raise UserWarning("Invalid move")
+        if player.agents == 0:
+            raise UserWarning("No agents")
+        if boardSpace.isOccupied and card.title != "Kwisatz Haderach":
+            raise UserWarning("Space already taken")
+        if not boardSpace.access in card.locationAccess:
+            raise UserWarning("Card can't go there")
+        if not self.checkBoardspaceCost(player, boardSpace):
+            raise UserWarning("Can't afford boardspace")
+
+        self.resolveEffects(player, boardSpace.cost, -1)
+        
+        player.agents -= 1
+        player.hand.remove(card)
+        player.inPlay.add(card)
+        boardSpace.isOccupied = True
+
+        if boardSpace.flag != None:
+            self.resolveEffects(boardSpace.flag, boardSpace.flagReward) #flag points to plr
+
+        self.resolveEffects(player, boardSpace.reward)
+        self.resolveEffects(player, card.onPlay)
+        #resolve board effects
+        #resolve card effects -- Prompt to decide order?
+
+    def playIntrigue(self, player, card):
+        self.resolveEffects(player, card.cost)
+        self.resolveEffects(player, card.effects)
+        
+    def reveal(self, player):
+        for card in player.hand:
+            card.revealed = True
+
+        player.inPlay.extend(player.hand)
+        player.hand.clear()
+
+        if player.isHighCouncil:
+            player.persuasion += 2
+        for card in player.hand: #prompt: order of reveal effects
+            if card.revealed == True:
+                #resolve card reveal effect
+                self.resolveEffects(player, card.onReveal)
+                card.revealed = False
+
+        if player.deployedTroops == 0: #no troops -> no swords
+            player.combatPower = 0
+
+        #imperium row shopping - next needs robust prompting function > shop, deploy > combat resolution
+
+        player.discard.extend(player.inPlay)
+        player.inPlay.clear()
+        player.hasRevealed = True
+        player.persuasion = 0
+
+    def buyImperiumCard(self, player, card):
+        if player.persuasion < card.persuasionCost:
+            raise UserWarning("not enough persuasion")
+        player.persuasion -= card.persuasionCost
+        if card in self.arrakisLiaisons:
+            self.arrakisLiaisons.remove(card)
+        elif card in self.spiceMustFlow:
+            self.spiceMustFlow.remove(card)
+        else:
+            self.imperiumRow.remove(card)
+            self.updateImperiumRow()
+        player.discard.append(card)
+        self.resolveEffects(player, card.purchaseEffect)
+        
+    def updateImperiumRow(self):
+        if len(self.imperiumRow) < 5:
+            if len(self.imperiumOrder) > 0:
+                newCardDrawn = self.imperiumOrder.pop()
+                self.imperiumRow.append(newCardDrawn)
+                return True
+            else:
+                return False
+
+
+    def setupRound(self):
+        #for boardSpot in self.board.boardSpaces:
+         #   boardSpot.isOccupied = False
+        for player in self.players: #do that all end of turn
+            #player.hasRevealed = False
+            #player.agents = player.maxAgents
+            drawCard(player, 5)
+
+        self.firstTurnMarker = (self.firstTurnMarker + 1) % self.numplayers
+        self.currentTurn += 1
+
+
+    def cleanupRound(self): #makers, recall, endgame
+        for duneSpace in self.board.yellowSpaces:
+            if duneSpace.isMaker and not duneSpace.isOccupied:
+                duneSpace.currentMaker += 1
+
+        for player in self.players: #can lump with bottom loop for efficiency
+            self.highestScore = max(self.highestScore, player.vp)
+        if self.highestScore >= 10 or self.currentTurn == 9: #VP reached or out of conflicts
+            return self.endgame()
+        else:
+            for boardSpot in self.board.boardSpaces:
+                boardSpot.isOccupied = False
+            for player in self.players:
+                player.hasRevealed = False
+                player.agents = player.maxAgents
+            return False
+
+
+    def endgame(self):
+        #play all endgame intrigues
+        #ex. Prompt all players to play whichever intrigues they want endgame now
+
+        selSort = [] #selection sort arr
+        for player in self.players:
+            selSort.add(player)
+
+        def comparePlrTies(player1, player2): #return True if player1 > player2, False if player2 > player1, None if perfectly equal???
+            if player1.vp != player2.vp:
+               return player1.vp > player2.vp
+            else: #vp == vp
+                if player1.spice != player2.spice:
+                    return player1.spice > player2.spice
+                if player1.sols != player2.sols:
+                    return player1.sols > player2.sols
+                if player1.water != player2.water:
+                    return player1.water > player2.water
+                if player1.garrisonedTroops != player2.garrisonedTroops:
+                    return player1.garrisonedTroops > player2.garrisonedTroops
+                #all else fails and somehow tied which should never happen
+                return None
+
+        for i in range(1, len(selSort)):
+            prevPlrInd = i - 1
+            while(prevPlrInd >= 0 and comparePlrTies(selSort[i], selSort[prevPlrInd])):
+                tempPlrRef = selSort[prevPlrInd]
+                selSort[prevPlrInd] = selSort[i]
+                selSort[i] = tempPlrRef
+                prevPlrInd -= 1
+                i -= 1
+
+        self.winner = selSort[0]
+        return True
+
+        
+
+    def drawIntrigue(self, player, number):
+        for i in range(number):
+            intrigueCard = self.intrigueOrder.pop()
+            player.intrigueCards.append(intrigueCard)
+
 def shuffleDiscard(player):
     if len(player.avDeck) == 0:
             #case 1: game just started, initialize
             if len(player.discard) == 0 and len(player.hand) == 0:
                 random.shuffle(cards.allStartingCards)
-                player.avDeck = cards.allStartingCards
+                startingDeck = copy.deepcopy(cards.allStartingCards)
+                player.avDeck = startingDeck
             else:
                 #case 2: discard empty because you drew too many
                 if len(player.discard) == 0:
@@ -55,12 +328,7 @@ def drawCard(player, numToDraw):
             shuffleDiscard(player)
         if len(player.avDeck) > 0:
             poppedCard = player.avDeck.pop() #Switch to deque before head hurts
-            player.hand.append(poppedCard)
-
-def discardHand(player):
-    for card in player.inPlay:
-        player.discard.append(card)
-    player.inPlay = []
+            player.hand.append(poppedCard) #alternate: negative index for last item of list
 
 def setup():
     print("dune: imperium")
@@ -70,26 +338,36 @@ def setup():
         numplayers = 4
     else:
         numplayers = max(int(npinput), 4)
+
+    game = Game(numplayers)
     # do leader selection sometime
-    leaderpack = leaders.init_leaders()
+    # leaderpack = leaders.init_leaders()
     # add option to choose!
     
     for i in range(numplayers):
-        players.append(Player(None, 1))
+        game.players.append(Player(None, 1))
         if numplayers == 4:
-            players[i].vp = 1
-    print(players)
-    
-    #setup conflict
-    conflictList = conflicts.init_conflicts()
+            game.players[i].vp = 1
+    print(game.players)
 
-    #setup intrigue, imperium piles
-    intrigueDeck = cards.init_intrigues()
-    imperiumDeck = cards.init_imperium_deck() #needs Arrakis Liaison/SMF implementation
+    for player in game.players:
+        shuffleDiscard(player) #setup - deepcopied
 
-    for player in players:
-        shuffleDiscard(player) #setup - Beware, cards all point to same card in memory for all plr
-        print(player.avDeck)
+    game.resolveEffects(game.players[0], ["1Intrigue"], 1)
+    game.checkBoardspaceCost(game.players[0], game.board.boardSpaceRefs.get("Arrakeen"))
+    game.players[0].persuasion = 7
+    game.promptPlayer(game.players[0], "shop")
+
     print("OK!")
+
+def simulateGame(players):
+    #setup , sim
+    pass
+
+
+#def simulateTurn():
+ #   for player in players:
+  #      drawCard(player, 5)
+
 
 setup()
