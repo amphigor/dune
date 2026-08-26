@@ -42,7 +42,7 @@ class Game: #to simulate one game
     def __init__(self, numPlr):
         self.players = []
         self.numplayers = numPlr
-        self.firstTurnMarker = random.randint(0, 3)
+        self.firstTurnMarker = random.randint(0, numPlr-1)
         self.conflictOrder = conflicts.init_conflicts()
         self.intrigueOrder = cards.init_intrigues()
         self.imperiumOrder = cards.init_imperium_deck()
@@ -374,7 +374,7 @@ class Game: #to simulate one game
 
         selSort = [] #selection sort arr
         for player in self.players:
-            selSort.add(player)
+            selSort.append(player)
 
         def comparePlrTies(player1, player2): #return True if player1 > player2, False if player2 > player1, None if perfectly equal???
             if player1.vp != player2.vp:
@@ -421,7 +421,7 @@ class Game: #to simulate one game
         self.resolveConflict()
         gameStatus = self.cleanupRound()
         if gameStatus:
-            print("winner: " + str(self.winner))
+            print("winner: " + str(self.winner) + " with VP: " + str(self.winner.vp))
 
     def superMysteriousRealAIDecision(self, player, decisionID=None):
         def decideTurnAndAct():
@@ -462,6 +462,15 @@ class Game: #to simulate one game
             intrigueCard = self.intrigueOrder.pop()
             player.intrigueCards.append(intrigueCard)
 
+    def setupPlayers(self):
+        isFourPlrGame = self.numplayers == 4
+        for i in range(self.numplayers):
+            plr = Player(None, 1)
+            self.players.append(plr)
+            if isFourPlrGame:
+                plr.vp = 1
+            shuffleDiscard(plr)
+
 def shuffleDiscard(player):
     if len(player.avDeck) == 0:
             #case 1: game just started, initialize
@@ -500,14 +509,7 @@ def setup():
     # leaderpack = leaders.init_leaders()
     # add option to choose!
     
-    for i in range(numplayers):
-        game.players.append(Player(None, 1))
-        if numplayers == 4:
-            game.players[i].vp = 1
-    print(game.players)
-
-    for player in game.players:
-        shuffleDiscard(player) #setup - deepcopied
+    game.setupPlayers()
 
     game.resolveEffects(game.players[0], ["1Intrigue"], 1)
     game.checkBoardspaceCost(game.players[0], game.board.boardSpaceRefs.get("Arrakeen"))
@@ -519,20 +521,30 @@ def setup():
        #     game.players[j].combatPower = random.randint(0, 20)
         #    game.players[j].deployedTroops = 1
        # game.resolveConflict()
-    for i in range(9):
+    for i in range(10):
         game.playThroughTurn()
         if game.winner != None:
             break
+    topScore = 0
+    for games in range(333):
+        result = simulateGame(numplayers)
+        topScore = max(topScore, result)
+    print("top score: " + str(topScore))
     print("OK!")
 
 def simulateGame(players):
     #setup , sim
     pass
 
-
-#def simulateTurn():
- #   for player in players:
-  #      drawCard(player, 5)
+def simulateGame(numplrs):
+    game = Game(numplrs)
+    game.setupPlayers()
+    for i in range(10):
+        game.playThroughTurn()
+        if game.winner != None:
+            break
+    print("game simulated")
+    return game.winner.vp
 
 
 setup()
