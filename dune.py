@@ -35,12 +35,14 @@ class Player:
         self.repSpac = 0
         self.repEmpr = 0
 
+      #  def __repr__(self):
+       #     return "Player" + str(id(self))
 
 class Game: #to simulate one game
     def __init__(self, numPlr):
         self.players = []
         self.numplayers = numPlr
-        self.firstTurnMarker = 0
+        self.firstTurnMarker = random.randint(0, 3)
         self.conflictOrder = conflicts.init_conflicts()
         self.intrigueOrder = cards.init_intrigues()
         self.imperiumOrder = cards.init_imperium_deck()
@@ -78,6 +80,10 @@ class Game: #to simulate one game
                                  }
 
     def resolveEffects(self, player, effectsList, multiplier = 1):
+        if player == None:
+            return
+        if effectsList == None:
+            return
         for effectString in effectsList:
             numValue = int(effectString[0])
             effect = effectString[1:]
@@ -98,24 +104,26 @@ class Game: #to simulate one game
                 numValue = int(effectString[0])
                 effect = effectString[1:]
                 mappedEffect = self.stringMappings.get(effect)
-                playerItemAmt = getattr(player, mappedEffect)
-                if playerItemAmt - numValue < 0:
-                    isOK = False
-                    break #formerly raise warning
-                else:
-                    pass
+                if mappedEffect:
+                    playerItemAmt = getattr(player, mappedEffect)
+                    if playerItemAmt - numValue < 0:
+                        isOK = False
+                        break #formerly raise warning
+                    else:
+                        pass
         specialReq = space.specialReq
         if specialReq:
             for effectString in specialReq:
                 numValue = int(effectString[0])
                 effect = effectString[1:]
                 mappedEffect = self.stringMappings[effect] #only for ST so whatever
-                playerItemAmt = getattr(player, mappedEffect)
-                if playerItemAmt - numValue < 0:
-                    isOK = False
-                    break#raise UserWarning("Special req fail")
-                else:
-                    pass
+                if mappedEffect:
+                    playerItemAmt = getattr(player, mappedEffect)
+                    if playerItemAmt - numValue < 0:
+                        isOK = False
+                        break#raise UserWarning("Special req fail")
+                    else:
+                        pass
         return isOK
 
     def promptPlayer(self, player, choice): #Play card effect? Trash? Resolve board or card first?
@@ -145,14 +153,27 @@ class Game: #to simulate one game
                         self.buyImperiumCard(player, self.imperiumRow[userInput])
                 except:
                     print("not a valid choice")
+        def promptDeployTroops(player, predetermined=None):
+            userInput = int(input("how many dudes do you want to deploy"))
+
+
         if choice == "shop":
             keepShopping = True
             while player.persuasion > 0 and keepShopping:
                 shop = promptChooseImperium(player)
                 if shop == False: 
                     keepShopping = False
+        elif choice == "troop":
+            promptDeployTroops(player)
                 
-
+    def deployTroops(self, player, number, maxDeployable):
+        if player.garrisonedTroops < number:
+            raise UserWarning("not enough troop") #warnings here, trycatch in prompts
+        if number > maxDeployable:
+            raise UserWarning("can't deploy that man")
+        player.deployedTroops += number
+        player.garrisonedTroops -= number
+        player.combatPower += number*2
 
 
     def playCard(self, player, card, boardSpace):
@@ -168,10 +189,12 @@ class Game: #to simulate one game
             raise UserWarning("Can't afford boardspace")
 
         self.resolveEffects(player, boardSpace.cost, -1)
+
+        startingTroops = player.garrisonedTroops
         
         player.agents -= 1
         player.hand.remove(card)
-        player.inPlay.add(card)
+        player.inPlay.append(card)
         boardSpace.isOccupied = True
 
         if boardSpace.flag != None:
@@ -181,6 +204,12 @@ class Game: #to simulate one game
         self.resolveEffects(player, card.onPlay)
         #resolve board effects
         #resolve card effects -- Prompt to decide order?
+        troopsGainedOnTurn = player.garrisonedTroops - startingTroops
+        #can prompt here, or return num deployable and have model call deploy function for however many valid
+        #can also just prompt model at prompting function to get a value
+        if boardSpace.isCombat:
+            return troopsGainedOnTurn
+        return -2
 
     def playIntrigue(self, player, card):
         self.resolveEffects(player, card.cost)
@@ -210,6 +239,80 @@ class Game: #to simulate one game
         player.inPlay.clear()
         player.hasRevealed = True
         player.persuasion = 0
+
+    def resolveConflict(self): #missing intrigue actions, some conflict rewards
+        #intrigue
+        combatPowers = {}
+        for player in self.players:
+            if player.combatPower != 0 and player.deployedTroops > 0:
+                combatPowers[player] = player.combatPower
+
+        def calculateCurrentLeadingPower():
+            currentLeaders = []
+            if combatPowers:
+                delayedPopList = []
+                currentLeadingPwr = max(combatPowers.values())
+                for player in combatPowers:
+                    if player.combatPower == currentLeadingPwr:
+                        currentLeaders.append(player)
+                        #combatPowers.pop(player)
+                        delayedPopList.append(player)
+                for player in delayedPopList:
+                    combatPowers.pop(player)
+            return currentLeaders
+        
+        leadingPlrs = calculateCurrentLeadingPower()
+        runnerUpPlrs = calculateCurrentLeadingPower()
+        lastPlacePlrs = calculateCurrentLeadingPower()
+
+        firstTied = len(leadingPlrs) > 1
+        secondTied = len(runnerUpPlrs) > 1
+        thirdTied = len(lastPlacePlrs) > 1
+        firstPlace = leadingPlrs[0] if leadingPlrs else None
+        secondPlace = runnerUpPlrs[0] if runnerUpPlrs else None
+        lastPlace = lastPlacePlrs[0] if lastPlacePlrs else None
+
+        currentCombat = self.conflictOrder[self.currentTurn]
+        isFourPlrGame = self.numplayers >= 4
+
+        if not isFourPlrGame: #BEWARE TERRIBLE IF STATEMENT AHEAD!!!!
+            if firstTied:
+                for player in leadingPlrs:
+                    self.resolveEffects(player, currentCombat.rewards2)
+            else:
+                self.resolveEffects(firstPlace, currentCombat.rewards1)
+                if secondTied:
+                    for player in runnerUpPlrs:
+                        self.resolveEffects(secondPlace, currentCombat.rewards3)
+                else:
+                    self.resolveEffects(secondPlace, currentCombat.rewards2)
+        else:
+            if firstTied:
+                for player in leadingPlrs:
+                    self.resolveEffects(player, currentCombat.rewards2)
+                if secondTied:
+                    pass #get zilch
+                else:
+                    if len(leadingPlrs) < 3: #dubious but for now
+                        self.resolveEffects(secondPlace, currentCombat.rewards3)
+            else:
+                self.resolveEffects(firstPlace, currentCombat.rewards1)
+                if secondTied:
+                    for player in runnerUpPlrs:
+                        self.resolveEffects(player, currentCombat.rewards3)
+                    #nothing for last
+                else:
+                    self.resolveEffects(secondPlace, currentCombat.rewards2)
+                    if thirdTied:
+                        pass #zilch
+                    else:
+                        self.resolveEffects(lastPlace, currentCombat.rewards3)
+
+        #intrigue - postcombat rewards
+
+        for player in self.players:
+            player.deployedTroops = 0
+            player.combatPower = 0
 
     def buyImperiumCard(self, player, card):
         if player.persuasion < card.persuasionCost:
@@ -300,7 +403,59 @@ class Game: #to simulate one game
         self.winner = selSort[0]
         return True
 
-        
+    def checkRevealStatuses(self):
+        revealedMap = {}
+        for player in self.players:
+            revealedMap[player] = player.hasRevealed
+        return revealedMap
+
+    def playThroughTurn(self):
+        self.setupRound()
+        #player turns\ amd reveal
+        currentPlayer = self.firstTurnMarker
+        while False in self.checkRevealStatuses().values():
+            if self.players[currentPlayer].hasRevealed == False:
+                self.superMysteriousRealAIDecision(self.players[currentPlayer])
+            #deploy troops needed
+            currentPlayer = (currentPlayer + 1) %4
+        self.resolveConflict()
+        gameStatus = self.cleanupRound()
+        if gameStatus:
+            print("winner: " + str(self.winner))
+
+    def superMysteriousRealAIDecision(self, player, decisionID=None):
+        def decideTurnAndAct():
+            randomChance = random.randint(1, 10)
+            if randomChance <= 9 and player.agents > 0:
+                playAgentTurn()
+            else:
+                revealTurn()
+
+        def playAgentTurn():
+            randomCard = None
+            randomSpace = None
+            attempts = 0
+            while randomSpace == None and attempts < 500:
+                randomCard = player.hand[random.randint(0, len(player.hand)-1)]
+                boardSpaces = list(self.board.boardSpaceRefs.values())
+                selectRandom = random.choice(boardSpaces)
+                if selectRandom.isOccupied == False and self.checkBoardspaceCost(player, selectRandom) and selectRandom.access in randomCard.locationAccess :
+                    randomSpace = selectRandom
+                attempts += 1
+            if randomSpace:
+                playCard = self.playCard(player, randomCard, randomSpace) 
+                deployables = playCard + 2
+                if randomSpace.isCombat:
+                    self.deployTroops(player, random.randint(0, min(deployables, player.garrisonedTroops)) , deployables) #BANDAID solution!! replace with proper prompting at prompting function
+                print(str(player) + " plays " + randomCard.title + " to " + randomSpace.name)
+            else:
+                revealTurn()
+        def revealTurn():
+            self.reveal(player)
+            print(str(player) + " reveals")
+            
+
+        decideTurnAndAct()
 
     def drawIntrigue(self, player, number):
         for i in range(number):
@@ -319,7 +474,8 @@ def shuffleDiscard(player):
                 if len(player.discard) == 0:
                     pass
                 else: #case 3: ran out of deck from drawing so shuffle discard
-                    player.avDeck = random.shuffle(player.discard)
+                    random.shuffle(player.discard)
+                    player.avDeck = player.discard
                     player.discard = []
 
 def drawCard(player, numToDraw):
@@ -356,8 +512,17 @@ def setup():
     game.resolveEffects(game.players[0], ["1Intrigue"], 1)
     game.checkBoardspaceCost(game.players[0], game.board.boardSpaceRefs.get("Arrakeen"))
     game.players[0].persuasion = 7
-    game.promptPlayer(game.players[0], "shop")
-
+    #game.promptPlayer(game.players[0], "shop")
+    #for i in range(9):
+     #   game.setupRound()
+      #  for j in range(game.numplayers):
+       #     game.players[j].combatPower = random.randint(0, 20)
+        #    game.players[j].deployedTroops = 1
+       # game.resolveConflict()
+    for i in range(9):
+        game.playThroughTurn()
+        if game.winner != None:
+            break
     print("OK!")
 
 def simulateGame(players):

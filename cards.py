@@ -23,7 +23,7 @@ class Card:
 
 numIntrigues = 40
 allStartingCards = [ #Title, cost, faction affiliation, access, purchase effect, onPlay, on reveal
-        Card("Signet Ring", 0, None, {"G", "B", "Y"}, None, {"Signet"}, {"1Pers"}),
+        Card("Signet Ring", 0, None, {"G", "B", "Y"}, None, {"1Signet"}, {"1Pers"}),
         Card("Convincing Argument", 0, None, {}, None, {}, {"2Pers"}),
         Card("Dagger", 0, None, {"G"}, None, {}, {"1Sword"}),
         Card("Diplomacy", 0, None, {"FR", "BG", "SG", "EM"}, None, {}, {"1Pers"}),
@@ -63,6 +63,8 @@ def init_intrigues():
         IntrigueCard("Water of Life", "P", ["1Water", "1Spice"], "3Draw"),
         IntrigueCard("Ambush", "C", None, "4Swords")
     ]
+    for i in range(49):
+        allIntrigues.append(IntrigueCard("Windfall", "P", None, "2Sol"))
     random.shuffle(allIntrigues)
     return allIntrigues
    
