@@ -6,7 +6,7 @@ class IntrigueCard:
         self.cost = cost
         self.effect = effect
 class Card:
-    def __init__(self, title, persuasionCost, factionAffil, locationAccess, purchaseEffect, onPlay, onReveal, onTrash = None): #holy terible
+    def __init__(self, title, persuasionCost, factionAffil, locationAccess, purchaseEffect, onPlay, onReveal, onTrash = None, id = 0): #holy terible
         self.title = title
         self.persuasionCost = persuasionCost
         self.factionAffil = factionAffil
@@ -17,18 +17,20 @@ class Card:
         self.onTrash = onTrash
 
         self.revealed = False
-    
+
+        self.id = id
+
     def __repr__(self):
         return self.title
 
 numIntrigues = 40
 allStartingCards = [ #Title, cost, faction affiliation, access, purchase effect, onPlay, on reveal
-        Card("Signet Ring", 0, None, {"G", "B", "Y"}, None, {"1Signet"}, {"1Pers"}),
-        Card("Convincing Argument", 0, None, {}, None, {}, {"2Pers"}),
-        Card("Dagger", 0, None, {"G"}, None, {}, {"1Sword"}),
-        Card("Diplomacy", 0, None, {"FR", "BG", "SG", "EM"}, None, {}, {"1Pers"}),
-        Card("Dune, The Desert Planet", 0, None, {"Y"}, None, {}, {"1Pers"}),
-        Card("Reconnaissance", 0, None, {"B"}, None, {}, {"1Pers"}),
+        Card("Signet Ring", 0, None, {"G", "B", "Y"}, None, {"1Signet"}, {"1Pers"}, id=0),
+        Card("Convincing Argument", 0, None, {}, None, {}, {"2Pers"}, id = 1),
+        Card("Dagger", 0, None, {"G"}, None, {}, {"1Sword"}, id = 2),
+        Card("Diplomacy", 0, None, {"FR", "BG", "SG", "EM"}, None, {}, {"1Pers"}, id = 3),
+        Card("Dune, The Desert Planet", 0, None, {"Y"}, None, {}, {"1Pers"}, id=4),
+        Card("Reconnaissance", 0, None, {"B"}, None, {}, {"1Pers"}, id=5),
     ]
 
 
@@ -37,7 +39,10 @@ def init_imperium_deck():
         Card("Arrakis Recruiter", 2, None, {"B"}, None, {"1Troop"}, {"1Pers", "1Sword"}),
         Card("Arrakis Recruiter", 2, None, {"B"}, None, {"1Troop"}, {"1Pers", "1Sword"}),
         Card("Arrakis Recruiter", 2, None, {"B"}, None, {"1Troop"}, {"1Pers", "1Sword"}),
-        Card("Arrakis Recruiter", 2, None, {"B"}, None, {"1Troop"}, {"1Pers", "1Sword"})
+        Card("Arrakis Recruiter", 2, None, {"B"}, None, {"1Troop"}, {"1Pers", "1Sword"}),
+        Card("Nuclear Bomb", 7, None, {"B", "Y"}, None, {"1Trash"}, {"9Sword"}),
+        Card("super Worm riders", 7, {"FR"}, {"Y", "FR"}, {"1InflF"}, {"4Spice"}, {"7Sword"}),
+        Card("lisan al gaib!!!", 8, {"FR", "BG"}, {"G", "B", "Y", "FR", "BG"}, {"4InflF"}, {"9Troop"}, {"9Pers"})
     ]
     for i in range(63):
         allImperiumCards.append(Card("Arrakis Recruiter", 2, None, {"B"}, None, {"1Troop"}, {"1Pers", "1Sword"}))

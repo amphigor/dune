@@ -4,6 +4,8 @@ import leaders
 import conflicts
 import cards
 import board
+
+import datavis
 #structs
 class Player:
     def __init__(self, leader, water):
@@ -29,17 +31,19 @@ class Player:
         self.inPlay = []
         self.discard = []
 
-        self.alliances = [] #might be better in game instance
+        #self.alliances = [] #might be better in game instance
         self.repFrem = 0
         self.repBene = 0
         self.repSpac = 0
         self.repEmpr = 0
 
-      #  def __repr__(self):
-       #     return "Player" + str(id(self))
+
+        self.tempName = str(id(self))
+        def __repr__(self):
+            return self.tempName
 
 class Game: #to simulate one game
-    def __init__(self, numPlr):
+    def __init__(self, numPlr, verbose=False):
         self.players = []
         self.numplayers = numPlr
         self.firstTurnMarker = random.randint(0, numPlr-1)
@@ -59,6 +63,7 @@ class Game: #to simulate one game
 
         self.highestScore = 0
         #self.leadingPlr = -1
+        self.verbose = verbose
 
         self.winner = None
 
@@ -445,14 +450,15 @@ class Game: #to simulate one game
             if randomSpace:
                 playCard = self.playCard(player, randomCard, randomSpace) 
                 deployables = playCard + 2
+                numToDeploy = random.randint(0, min(deployables, player.garrisonedTroops))
                 if randomSpace.isCombat:
-                    self.deployTroops(player, random.randint(0, min(deployables, player.garrisonedTroops)) , deployables) #BANDAID solution!! replace with proper prompting at prompting function
-                print(str(player) + " plays " + randomCard.title + " to " + randomSpace.name)
+                    self.deployTroops(player, numToDeploy , deployables) #BANDAID solution!! replace with proper prompting at prompting function
+                self.vprint(player.tempName + " plays " + randomCard.title + " to " + randomSpace.name + " and deploys " + str(numToDeploy))
             else:
                 revealTurn()
         def revealTurn():
+            self.vprint(player.tempName + " reveals " + str(player.hand))
             self.reveal(player)
-            print(str(player) + " reveals")
             
 
         decideTurnAndAct()
@@ -470,6 +476,35 @@ class Game: #to simulate one game
             if isFourPlrGame:
                 plr.vp = 1
             shuffleDiscard(plr)
+
+    def vprint(self, toPrint):
+        #if game is set to verbose print, print
+        if self.verbose:
+            print(toPrint)
+
+    def getGameState(self, relativePlayer): #Rudimentary implementation - skipping other player info
+        playerStatsNonHidden = []
+        playerStatsHidden = []
+        playerAvailableCardInfo = []
+        playerAttributes = vars(relativePlayer)
+        hiddenList = ["intrigueCards", "avDeck", "hand"]
+        annoyingList = ["inPlay", "discard"]
+        for key in playerAttributes:
+            if key in hiddenList:
+                playerStatsHidden.append(playerAttributes[key])
+            elif key in annoyingList:
+                playerAvailableCardInfo.append(playerAttributes[key])
+            else:
+                playerStatsNonHidden.append(playerAttributes[key])
+
+        turnMarker = self.firstTurnMarker
+        cTurn = self.currentTurn
+        currentConflict = self.conflictOrder[cTurn]
+        boardInfo = self.board.boardSpaceRefs
+
+        return playerStatsHidden, playerAvailableCardInfo, playerStatsNonHidden, boardInfo, cTurn, currentConflict, turnMarker
+        #still needs info on SMFs, imperium row, arrakis liaisons, mentat
+
 
 def shuffleDiscard(player):
     if len(player.avDeck) == 0:
@@ -511,6 +546,7 @@ def setup():
     
     game.setupPlayers()
 
+    game.getGameState(0)
     game.resolveEffects(game.players[0], ["1Intrigue"], 1)
     game.checkBoardspaceCost(game.players[0], game.board.boardSpaceRefs.get("Arrakeen"))
     game.players[0].persuasion = 7
@@ -526,15 +562,16 @@ def setup():
         if game.winner != None:
             break
     topScore = 0
-    for games in range(333):
+
+    scoreDistr = dict()
+
+    for games in range(2000):
         result = simulateGame(numplayers)
         topScore = max(topScore, result)
+        scoreDistr[result] = scoreDistr.get(result, 0) + 1
     print("top score: " + str(topScore))
     print("OK!")
-
-def simulateGame(players):
-    #setup , sim
-    pass
+    datavis.bplot(scoreDistr.keys(), scoreDistr.values())
 
 def simulateGame(numplrs):
     game = Game(numplrs)
@@ -543,8 +580,13 @@ def simulateGame(numplrs):
         game.playThroughTurn()
         if game.winner != None:
             break
-    print("game simulated")
+    #print("game simulated")
     return game.winner.vp
 
+def trainingSetup(nmplrs):
+    game = Game(nmplrs, True)
+    game.setupPlayers()
+    return game
 
-setup()
+
+#setup()
