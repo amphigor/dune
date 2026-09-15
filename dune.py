@@ -38,7 +38,7 @@ class Player:
         self.repEmpr = 0
 
 
-        self.tempName = str(id(self))
+        self.tempName = str(id(self) % 67)
         def __repr__(self):
             return self.tempName
 
@@ -55,6 +55,7 @@ class Game: #to simulate one game
         self.board = board.Board()
         self.mentatAvailable = True
         self.currentTurn = -1 #0 based
+        self.currentPlayerTurn = self.firstTurnMarker
 
         self.imperiumRow = []
         for i in range(5):
@@ -352,6 +353,7 @@ class Game: #to simulate one game
             drawCard(player, 5)
 
         self.firstTurnMarker = (self.firstTurnMarker + 1) % self.numplayers
+        self.currentPlayerTurn = self.firstTurnMarker
         self.currentTurn += 1
 
 
@@ -422,7 +424,7 @@ class Game: #to simulate one game
             if self.players[currentPlayer].hasRevealed == False:
                 self.superMysteriousRealAIDecision(self.players[currentPlayer])
             #deploy troops needed
-            currentPlayer = (currentPlayer + 1) %4
+            currentPlayer = (currentPlayer + 1) % self.numplayers
         self.resolveConflict()
         gameStatus = self.cleanupRound()
         if gameStatus:
@@ -504,7 +506,12 @@ class Game: #to simulate one game
 
         return playerStatsHidden, playerAvailableCardInfo, playerStatsNonHidden, boardInfo, cTurn, currentConflict, turnMarker
         #still needs info on SMFs, imperium row, arrakis liaisons, mentat
-
+    
+    def playBotMoveWrapper(self, bot, board, card, deployNum): #env.step()
+        #playCard will already throw most of exceptions needed + deployTroops too
+        numTroopsGained = self.playCard(bot, card, board)
+        numTroopsDeployable = numTroopsGained + 2
+        self.deployTroops(bot, deployNum, numTroopsDeployable)
 
 def shuffleDiscard(player):
     if len(player.avDeck) == 0:
@@ -587,6 +594,7 @@ def trainingSetup(nmplrs):
     game = Game(nmplrs, True)
     game.setupPlayers()
     return game
+
 
 
 #setup()

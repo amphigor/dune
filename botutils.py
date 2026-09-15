@@ -6,6 +6,9 @@ from torch.nn import functional as F
 import numpy as np
 
 device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else "cpu"
+NUM_BOARD_SPACES = 22
+MAX_HAND_SIZE = 21
+MAX_DEPLOYABLE = 12
 
 class dnetwork(nn.Module):
     def __init__(self, input_dims, l1_dims, l2_dims, outpt_dims, learnrate):
@@ -17,9 +20,10 @@ class dnetwork(nn.Module):
 
         self.l1 = nn.Linear(*input_dims, l1_dims)
         self.l2 = nn.Linear(l1_dims, l2_dims)
-        self.l3b = nn.Linear(l2_dims, outpt_dims) #for rollback just remove this and replace with l3 only
-        self.l3c = nn.Linear(l2_dims, outpt_dims)
-        self.l3d = nn.Linear(l2_dims, outpt_dims)
+        #self.l3b = nn.Linear(l2_dims, outpt_dims) #for rollback just remove this and replace with l3 only
+        self.l3b = nn.Linear(l2_dims, NUM_BOARD_SPACES) # 22 board spaces
+        self.l3c = nn.Linear(l2_dims, MAX_HAND_SIZE) # 16 is cleaner, but practical max is 21 cards in hand
+        self.l3d = nn.Linear(l2_dims, MAX_DEPLOYABLE) # hard cap of 12 deployable troops
 
         self.optimizer = optim.Adam(self.parameters(), lr = learnrate)
         self.loss = nn.MSELoss()
@@ -27,6 +31,7 @@ class dnetwork(nn.Module):
         self.to(device)
 
     def forward(self, state):
+        print(state.dtype)
         x = F.relu(self.l1(state))
         x = F.relu(self.l2(x))
         #actions = self.l3(x)
@@ -34,7 +39,7 @@ class dnetwork(nn.Module):
         card = self.l3c(x)
         numofguystodrop = self.l3d(x)
         #return as tuple below
-        return boardspace, card, numofguystodrop
+        return boardspace, card, numofguystodrop #potential: reveal/no reveal, card to buy, optional effects, intrigue, debug info
         #will need to calculate loss for second too, see discuss.pytorch.org/t/a-model-with-multiple-outputs/10440
 
 class duneBot(): #rewards, exploration rate, 
@@ -52,7 +57,9 @@ class duneBot(): #rewards, exploration rate,
 
         self.network = dnetwork(input_dims, 256, 256, output_size, learnrate)
 
-        self.action_space = [i for i in range(output_size)]
+        self.card_action_space = [i for i in range(MAX_HAND_SIZE)]#[i for i in range(output_size)]
+        self.board_aspace = [i for i in range(NUM_BOARD_SPACES)]
+        self.deploy_aspace = [i for i in range(MAX_DEPLOYABLE)]
 
         self.state_mem = np.zeros((self.max_mem, *input_dims), np.float32)
         self.new_state_mem = np.zeros((self.max_mem, *input_dims), np.float32)
@@ -72,14 +79,17 @@ class duneBot(): #rewards, exploration rate,
         self.mem_cntr += 1
 
     def chooseAction(self, observation):
-        if np.random.random() < self.epsilon: #should be >
-            state = torch.tensor([observation]).to(self.network.device)
-            actions = self.network.forward(state)
-            action = torch.argmax(actions).item() #optimal
+        if np.random.random() > self.epsilon:
+            state = torch.tensor([observation]).to(self.network.device) #Potential failure point - print dtype
+            boardspace, card, numDeploy = self.network.forward(state)
+            boardspace = torch.argmax(boardspace).item() #optimal choices?
+            card = torch.argmax(card).item()
+            numDeploy = torch.argmax(numDeploy).item()
         else:
-            action = np.random.choice(self.action_space)
-
-        return action
+            boardspace = np.random.choice(self.board_aspace)
+            card = np.random.choice(self.card_action_space) 
+            numDeploy = np.random.choice(self.deploy_aspace)
+        return boardspace, card, numDeploy
 
     def learn(self):
         if self.mem_cntr < self.batch_size: #if not enough mems to learn
@@ -113,7 +123,8 @@ class duneBot(): #rewards, exploration rate,
 
 
 
-        def updateActionSpace(player):
-            pass
-
+    #def updateActionSpace(player):
+     #   pass
+    #Only would need if we wanted to filter out used spaces before feeding into model
+    #however then we'd never know about possible infiltrate moves
 

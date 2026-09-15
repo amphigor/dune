@@ -3,10 +3,12 @@ from botutils import duneBot
 import datavis
 import numpy as np
 
-def main():
-    agent = duneBot(gamma = 0.99, epsilon = 1.0, batch_size = 64, output_size = 4, input_dims = [8], learnrate = 0.003)
+from botutils import MAX_HAND_SIZE
+
+def main(): #input_dims originally 
+    agent = duneBot(gamma = 0.99, epsilon = 1.0, batch_size = 64, output_size = 4, input_dims = [65], learnrate = 0.003)
     scores, eps_history = [], []
-    n_games = 500
+    n_games = 500 
 
     print(agent.input_dims)
 
@@ -15,20 +17,50 @@ def main():
         done = False
         environment = dune.trainingSetup(4)
         botPlayer = environment.players[0]
-        observation = getGameStateBot(environment, botPlayer)
-        while not done:
-            action = agent.chooseAction(observation)
-            print(action)
+        #observation = getGameStateBot(environment, botPlayer)
+        while not done: #while game not over, play turns
+            environment.setupRound()
+            while False in environment.checkRevealStatuses().values():
+                playUntilBotTurn(environment, botPlayer)
 
+                successfullyPlayed = False
+                while not successfullyPlayed:
+                    observation = getGameStateBot(environment, botPlayer)
+                    boardspace, card, numDeploy = agent.chooseAction(observation)
+                    print(boardspace, card, numDeploy)
+                    reward = 0
+                    try:
+                        environment.playBotMoveWrapper(botPlayer, boardspace, card, numDeploy)
+                        successfullyPlayed = True
+                        reward += 4
+                    except:
+                        reward -= 1
+                    finally:
+                        newObservation = getGameStateBot(environment, botPlayer)
+                        score += reward
+                        agent.storeTransition(observation, action, reward, newObservation, False) #should be actions for 2nd prm
+                        agent.learn()
 
-            agent.learn()
+                #agent.learn() #Which one?
+            environment.resolveConflict()
+            gameStatus = environment.cleanupRound()
+            if gameStatus:
+                done = True
+            #agent.learn()
         scores.append(score)
         eps_history.append(agent.epsilon)
 
         avg_score = np.mean(scores[-100:])
-
-        #numpy print stuff out
+        print("game" + i + " avg score " + avg_score + " eps " + agent.epsilon)
+    #done
+    datavis.lplot(n_games, scores)
         
+def playUntilBotTurn(game, bot):
+    while game.players[game.currentPlayerTurn] != bot:
+        if game.players[game.currentPlayerTurn].hasRevealed == False:
+            game.superMysteriousRealAIDecision(game.players[game.currentPlayerTurn])
+            game.currentPlayerTurn = (game.currentPlayerTurn + 1) % game.numplayers
+
 def getGameStateBot(game, relativePlr):
     def boardStateReader(board):
         boardRep = []
@@ -40,7 +72,7 @@ def getGameStateBot(game, relativePlr):
         return boardRep
 
     def handReader(hand):
-        maxHandSize = 15 #probably won't exceed in a game
+        maxHandSize = MAX_HAND_SIZE #probably won't exceed in a game
         handRep = []
         for card in hand:
             id = card.id
@@ -55,14 +87,15 @@ def getGameStateBot(game, relativePlr):
     state = [turnmark, conflict.id, ct] + boardStateReader(board)
     for element in nonhd:
         if element:
-            state.append(element)
+            state.append(int(element))
         else: #currently in event that leader = None
             state.append(0) #give leaders ids too, 0 - 4, 0 being no leader
     hand = handReader(relativePlr.hand)
     state += hand
     print(state)
-    state = np.array(state, dtype=int)
+    state = np.array(state, dtype=float)
     print(state)
+    print(len(state))
     return state
 
 main()
