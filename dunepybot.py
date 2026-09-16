@@ -27,18 +27,19 @@ def main(): #input_dims originally
                 while not successfullyPlayed:
                     observation = getGameStateBot(environment, botPlayer)
                     boardspace, card, numDeploy = agent.chooseAction(observation)
-                    print(boardspace, card, numDeploy)
+                    #print(boardspace, card, numDeploy)
                     reward = 0
                     try:
                         environment.playBotMoveWrapper(botPlayer, boardspace, card, numDeploy)
                         successfullyPlayed = True
-                        reward += 4
+                        reward += 40
+                        print("Success")
                     except:
                         reward -= 1
                     finally:
                         newObservation = getGameStateBot(environment, botPlayer)
                         score += reward
-                        agent.storeTransition(observation, action, reward, newObservation, False) #should be actions for 2nd prm
+                        agent.storeTransition(observation, np.array([boardspace, card, numDeploy]), reward, newObservation, False) #should be actions for 2nd prm
                         agent.learn()
 
                 #agent.learn() #Which one?
@@ -92,10 +93,10 @@ def getGameStateBot(game, relativePlr):
             state.append(0) #give leaders ids too, 0 - 4, 0 being no leader
     hand = handReader(relativePlr.hand)
     state += hand
-    print(state)
+    #print(state)
     state = np.array(state, dtype=float)
-    print(state)
-    print(len(state))
+    #print(state)
+    #print(len(state))
     return state
 
 main()

@@ -31,7 +31,6 @@ class dnetwork(nn.Module):
         self.to(device)
 
     def forward(self, state):
-        print(state.dtype)
         x = F.relu(self.l1(state))
         x = F.relu(self.l2(x))
         #actions = self.l3(x)
@@ -64,7 +63,7 @@ class duneBot(): #rewards, exploration rate,
         self.state_mem = np.zeros((self.max_mem, *input_dims), np.float32)
         self.new_state_mem = np.zeros((self.max_mem, *input_dims), np.float32)
 
-        self.action_mem = np.zeros(self.max_mem, dtype=np.int32)
+        self.action_mem = np.zeros((self.max_mem, 3), dtype=np.int32) #3 is the input #dims coming from storeTransition
         self.reward_mem = np.zeros(self.max_mem, dtype=np.float32)
         self.term_mem = np.zeros(self.max_mem, dtype=np.bool)
 
@@ -80,7 +79,7 @@ class duneBot(): #rewards, exploration rate,
 
     def chooseAction(self, observation):
         if np.random.random() > self.epsilon:
-            state = torch.tensor([observation]).to(self.network.device) #Potential failure point - print dtype
+            state = torch.tensor([observation], dtype = torch.float32).to(self.network.device) #Potential failure point - print dtype
             boardspace, card, numDeploy = self.network.forward(state)
             boardspace = torch.argmax(boardspace).item() #optimal choices?
             card = torch.argmax(card).item()
@@ -106,14 +105,27 @@ class duneBot(): #rewards, exploration rate,
         terminal_batch = torch.tensor(self.term_mem[batch]).to(self.network.device)
 
         action_batch = self.action_mem[batch]
+        
+        #need to loop and calculate q_eval for each output individually, need that action in action_batch specifically
+        tensor_parent = self.network.forward(state_batch)
+        loss = 0
+        for i in range(3): #our current number of outputs. should match the number of tensors in tensor_parent
+            parameter_actions = action_batch[:, i] #fetches the actual actions taken per parameter, goes through all and takes index 0
+            parameter_tensor = tensor_parent[i]
+            q_eval_param = parameter_tensor[batch_index, parameter_actions]
+            q_next_param = self.network.forward(new_state_batch)[i]
+            q_next_param[terminal_batch] = 0.0
 
-        q_eval = self.network.forward(state_batch)[batch_index, action_batch]
+            q_target = reward_batch + self.gamma * torch.max(q_next_param, dim = 1)[0]
+            loss += self.network.loss(q_target, q_eval_param).to(self.network.device)
+
+        #q_eval = self.network.forward(state_batch)[batch_index, action_batch] # use :? use [] for pyb
         q_next = self.network.forward(new_state_batch) #target network goes here
-        q_next[terminal_batch] = 0.0
+        #q_next[terminal_batch] = 0.0
+        #curious - what form should q_next be?
+        #q_target = reward_batch + self.gamma * torch.max(q_next, dim = 1)[0]
 
-        q_target = reward_batch + self.gamma * torch.max(q_next, dim = 1)[0]
-
-        loss = self.network.loss(q_target, q_eval).to(self.network.device)
+        #loss = self.network.loss(q_target, q_eval).to(self.network.device)
         loss.backward()
         self.network.optimizer.step()
 
